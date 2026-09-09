@@ -44,7 +44,7 @@ def save_users(users_dict):
 
 USERS = load_users()
 
-# --- VERİ TABANI HAZIRLAMA ---
+# --- VERİ TABANI HAZIRLAMA VE EKSİK SÜTUNLARI DÜZELTME ---
 def load_data(sheet_name):
     if not os.path.exists(EXCEL_FILE):
         with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
@@ -52,7 +52,22 @@ def load_data(sheet_name):
             pd.DataFrame(columns=["Tarih / Saat", "Departman", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Arşivlenme Tarihi"]).to_excel(writer, sheet_name="Arsiv_Dokumanlari", index=False)
             pd.DataFrame(columns=["Tarih / Saat", "İşlemi Yapan", "Departman / Modül", "Detay / Doküman"]).to_excel(writer, sheet_name="Bildirimler", index=False)
     try:
-        return pd.read_excel(EXCEL_FILE, sheet_name=sheet_name)
+        df = pd.read_excel(EXCEL_FILE, sheet_name=sheet_name)
+        
+        # Eski Excel yapılarından gelen eksik sütunları otomatikamlama
+        if sheet_name == "Departman_Dokumanlari":
+            expected_cols = ["Tarih / Saat", "Departman", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Revizyon Mu"]
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = "-" if col not in ["Revizyon Mu"] else "Hayır"
+        
+        elif sheet_name == "Arsiv_Dokumanlari":
+            expected_cols = ["Tarih / Saat", "Departman", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Arşivlenme Tarihi"]
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = "-"
+                    
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -270,7 +285,7 @@ else:
                 old_info = p["old_row"]
                 
                 # 1. Eski Dosyayı 'arsivlenenler' Klasörüne Taşı
-                old_file_name = old_info["Dosya Adı"]
+                old_file_name = old_info.get("Dosya Adı", "Yok")
                 if old_file_name != "Yok":
                     src_p = os.path.join(UPLOAD_DIR, old_file_name)
                     dst_p = os.path.join(ARCHIVE_DIR, old_file_name)
@@ -279,13 +294,13 @@ else:
                 
                 # 2. Eski Doküman Verisini Excel 'Arsiv_Dokumanlari' Sayfasına Ekle
                 old_archive_rec = {
-                    "Tarih / Saat": old_info["Tarih / Saat"],
+                    "Tarih / Saat": old_info.get("Tarih / Saat", "-"),
                     "Departman": dept_name,
-                    "Doküman No": old_info["Doküman No"],
-                    "Doküman Adı": old_info["Doküman Adı"],
-                    "Açıklama / Not": old_info["Açıklama / Not"],
+                    "Doküman No": old_info.get("Doküman No", "-"),
+                    "Doküman Adı": old_info.get("Doküman Adı", "-"),
+                    "Açıklama / Not": old_info.get("Açıklama / Not", "-"),
                     "Dosya Adı": old_file_name,
-                    "Ekleyen": old_info["Ekleyen"],
+                    "Ekleyen": old_info.get("Ekleyen", "-"),
                     "Arşivlenme Tarihi": now_str
                 }
                 df_archive = pd.concat([pd.DataFrame([old_archive_rec]), df_archive], ignore_index=True)
@@ -339,34 +354,46 @@ else:
         if dept_active_docs.empty:
             st.warning("Henüz bu departmana ait aktif doküman bulunmuyor.")
         else:
-            st.dataframe(dept_active_docs[["Tarih / Saat", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Revizyon Mu"]], use_container_width=True)
+            show_cols = [c for c in ["Tarih / Saat", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Revizyon Mu"] if c in dept_active_docs.columns]
+            st.dataframe(dept_active_docs[show_cols], use_container_width=True)
+            
             st.markdown("#### 📥 Güncel Dosyaları İndir")
             for idx, row in dept_active_docs.iterrows():
-                f_name = row["Dosya Adı"]
+                f_name = row.get("Dosya Adı", "Yok")
                 if f_name and f_name != "Yok":
                     f_path = os.path.join(UPLOAD_DIR, f_name)
                     if os.path.exists(f_path):
                         c1, c2 = st.columns([3, 1])
+                        doc_no_str = row.get('Doküman No', '-')
+                        doc_title_str = row.get('Doküman Adı', '-')
+                        doc_note_str = row.get('Açıklama / Not', '-')
                         rev_badge = " 🔄 **[REVİZE DOKÜMAN]**" if row.get("Revizyon Mu") == "Evet" else ""
-                        c1.write(f"📄 **[{row['Doküman No']}]** {row['Doküman Adı']}{rev_badge} - *{row['Açıklama / Not']}*")
+                        
+                        c1.write(f"📄 **[{doc_no_str}]** {doc_title_str}{rev_badge} - *{doc_note_str}*")
                         with open(f_path, "rb") as f:
                             c2.download_button(label="📥 İndir", data=f, file_name=f_name, key=f"active_{idx}_{f_name}")
 
     # TAB 2: SON REVİZELER / DEĞİŞİKLİKLER
     with tab2:
-        revised_docs = dept_active_docs[dept_active_docs["Revizyon Mu"] == "Evet"]
+        if "Revizyon Mu" in dept_active_docs.columns:
+            revised_docs = dept_active_docs[dept_active_docs["Revizyon Mu"] == "Evet"]
+        else:
+            revised_docs = pd.DataFrame()
+            
         if revised_docs.empty:
             st.info("Bu departmanda henüz revize edilmiş bir doküman bulunmuyor.")
         else:
             st.subheader("🔄 Son Revize Edilen Güncel Dokümanlar")
-            st.dataframe(revised_docs[["Tarih / Saat", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen"]], use_container_width=True)
+            show_cols_rev = [c for c in ["Tarih / Saat", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen"] if c in revised_docs.columns]
+            st.dataframe(revised_docs[show_cols_rev], use_container_width=True)
+            
             for idx, row in revised_docs.iterrows():
-                f_name = row["Dosya Adı"]
+                f_name = row.get("Dosya Adı", "Yok")
                 if f_name and f_name != "Yok":
                     f_path = os.path.join(UPLOAD_DIR, f_name)
                     if os.path.exists(f_path):
                         c1, c2 = st.columns([3, 1])
-                        c1.write(f"🔄 **[{row['Doküman No']}]** {row['Doküman Adı']} - *Son Revizyon Notu: {row['Açıklama / Not']}*")
+                        c1.write(f"🔄 **[{row.get('Doküman No', '-')}]** {row.get('Doküman Adı', '-')} - *Son Revizyon Notu: {row.get('Açıklama / Not', '-')}*")
                         with open(f_path, "rb") as f:
                             c2.download_button(label="📥 Son Revizyonu İndir", data=f, file_name=f_name, key=f"rev_{idx}_{f_name}")
 
@@ -376,13 +403,15 @@ else:
             st.info("Bu departman için arşivlenmiş eski bir doküman versiyonu bulunmuyor.")
         else:
             st.subheader("📁 Arşive Kaldırılan Eski Versiyon Dokümanlar")
-            st.dataframe(dept_archive_docs[["Arşivlenme Tarihi", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen"]], use_container_width=True)
+            show_cols_arch = [c for c in ["Arşivlenme Tarihi", "Doküman No", "Doküman Adı", "Açıklama / Not", "Dosya Adı", "Ekleyen"] if c in dept_archive_docs.columns]
+            st.dataframe(dept_archive_docs[show_cols_arch], use_container_width=True)
+            
             for idx, row in dept_archive_docs.iterrows():
-                f_name = row["Dosya Adı"]
+                f_name = row.get("Dosya Adı", "Yok")
                 if f_name and f_name != "Yok":
                     f_path = os.path.join(ARCHIVE_DIR, f_name)
                     if os.path.exists(f_path):
                         c1, c2 = st.columns([3, 1])
-                        c1.write(f"📁 **[{row['Doküman No']}]** {row['Doküman Adı']} *(Eski Versiyon)* - Arşivlenme: {row['Arşivlenme Tarihi']}")
+                        c1.write(f"📁 **[{row.get('Doküman No', '-')}]** {row.get('Doküman Adı', '-')} *(Eski Versiyon)* - Arşivlenme: {row.get('Arşivlenme Tarihi', '-')}")
                         with open(f_path, "rb") as f:
                             c2.download_button(label="📥 Eski Versiyonu İndir", data=f, file_name=f_name, key=f"arch_{idx}_{f_name}")
