@@ -103,7 +103,6 @@ if not st.session_state["logged_in"]:
                     st.session_state["logged_in"] = True
                     st.session_state["username"] = selected_user
                     st.session_state["role"] = USERS[selected_user]["role"]
-                    # Doküman yükleme ve düzenleme yetkisi sadece Ömer OCAK ve Dilber Alaşar için aktif
                     st.session_state["can_edit"] = selected_user in ["Ömer OCAK", "Dilber Alaşar"]
                     st.success(f"Hoş geldiniz, {selected_user}!")
                     st.rerun()
@@ -176,11 +175,18 @@ with st.sidebar.expander("🔑 Şifremi Değiştir"):
                 save_users(USERS)
                 st.success("Şifreniz başarıyla değiştirildi!")
 
-# --- CANLI BİLDİRİM PANELİ (SİTE EN ÜST KISMI) ---
+# --- CANLI BİLDİRİM PANELİ (GÜVENLİ OKUMA KONTROLÜ İLE) ---
 df_notif_top = load_data("Bildirimler")
 if not df_notif_top.empty:
     latest = df_notif_top.iloc[0]
-    st.info(f"🔔 **Son Güncelleme / Revizyon Bildirimi:** [{latest['Tarih / Saat']}] **{latest['İşlemi Yapan']}** tarafından **{latest['Departman / Modül']}** alanına doküman/revizyon eklendi: *{latest['Detay / Doküman']}*")
+    
+    # Kolon adının eski/yeni Excel dosyalarında uyuşmazlık çıkarmasını önleyen kontrol
+    dept_val = latest.get('Departman / Modül', latest.get('Modül', 'Genel'))
+    time_val = latest.get('Tarih / Saat', '-')
+    user_val = latest.get('İşlemi Yapan', '-')
+    detail_val = latest.get('Detay / Doküman', '-')
+    
+    st.info(f"🔔 **Son Güncelleme / Revizyon Bildirimi:** [{time_val}] **{user_val}** tarafından **{dept_val}** alanına doküman/revizyon eklendi: *{detail_val}*")
 
 # --- BİLDİRİM GEÇMİŞİ MODÜLÜ ---
 if modul == "🔔 Bildirim Geçmişi":
