@@ -169,7 +169,6 @@ if modul == "📜 Sertifikalar":
                 df = pd.concat([df, pd.DataFrame([yeni])], ignore_index=True)
                 save_data(df, "Sertifikalar")
                 
-                # Bildirim Kaydı
                 detay_metni = f"{sertifika_adi} ({file_name if file_name != 'Yok' else 'Dokümansız'})"
                 add_notification(st.session_state["username"], "Sertifikalar", detay_metni)
                 
@@ -211,7 +210,6 @@ elif modul == "🔧 Kalibrasyon Takibi":
                 df = pd.concat([df, pd.DataFrame([yeni])], ignore_index=True)
                 save_data(df, "Kalibrasyon")
                 
-                # Bildirim Kaydı
                 detay_metni = f"{cihaz} (Seri No: {seri_no}) - {file_name}"
                 add_notification(st.session_state["username"], "Kalibrasyon", detay_metni)
                 
@@ -252,7 +250,6 @@ elif modul == "🔍 Kalite Kontrol":
                 df = pd.concat([df, pd.DataFrame([yeni])], ignore_index=True)
                 save_data(df, "Kalite_Kontrol")
                 
-                # Bildirim Kaydı
                 detay_metni = f"Rapor No: {rapor_no} - Parça: {parca} ({karar})"
                 add_notification(st.session_state["username"], "Kalite Kontrol", detay_metni)
                 
@@ -294,7 +291,6 @@ elif modul == "🌐 Entegre Yönetim Sistemleri (ISO)":
                 df = pd.concat([df, pd.DataFrame([yeni])], ignore_index=True)
                 save_data(df, "Entegre_Yonetim")
                 
-                # Bildirim Kaydı
                 detay_metni = f"{iso_std} - Madde: {madde} ({file_name})"
                 add_notification(st.session_state["username"], "Entegre Yönetim Sistemleri", detay_metni)
                 
@@ -307,17 +303,36 @@ elif modul == "🌐 Entegre Yönetim Sistemleri (ISO)":
 
 # --- MODÜL 5: DOSYA KÜTÜPHANESİ ---
 elif modul == "📁 Yüklenen Dosyalar Kütüphanesi":
-    st.title("📁 Yüklenen Belgeler & Dokümanlar")
-    st.info("Sistemdeki tüm dokümanları ve yüklenen dosyaları buradan görüntüleyebilir ve indirebilirsiniz.")
+    st.title("📁 Yüklenen Belgeler & Doküman Kütüphanesi")
     
+    # EĞER KULLANICI EDİTÖR İSE BELGE YÜKLEME ALANI GÖSTER
+    if st.session_state["can_edit"]:
+        with st.form("genel_dosya_form", clear_on_submit=True):
+            st.subheader("📤 Yeni Doküman / Belge Yükle")
+            uploaded_genel_doc = st.file_uploader("Sisteme Eklemek İstediğiniz Belgeyi Seçiniz (PDF, Word, Excel, Görsel)", type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"])
+            
+            if st.form_submit_button("🚀 Belgeyi Kütüphaneye Yükle"):
+                if uploaded_genel_doc is not None:
+                    file_name = save_uploaded_file(uploaded_genel_doc)
+                    add_notification(st.session_state["username"], "Dosya Kütüphanesi", f"Yeni Genel Belge Yüklendi: {file_name}")
+                    st.success(f"'{file_name}' dosyası kütüphaneye başarıyla yüklendi!")
+                    st.rerun()
+                else:
+                    st.error("Lütfen yüklemek için bir dosya seçiniz.")
+        st.markdown("---")
+    else:
+        st.info("Sistemdeki tüm dokümanları ve yüklenen dosyaları buradan görüntüleyebilir ve indirebilirsiniz.")
+    
+    # YÜKLENEN DOSYALARI LİSTELEME VE İNDİRME
     files = os.listdir(UPLOAD_DIR)
     if not files:
         st.warning("Henüz sisteme yüklenmiş bir dosya bulunmuyor.")
     else:
+        st.subheader("📄 Mevcut Belgeler Listesi")
         for file in files:
             file_path = os.path.join(UPLOAD_DIR, file)
             col1, col2 = st.columns([3, 1])
-            col1.write(f"📄 **{file}**")
+            col1.write(f"📁 **{file}**")
             with open(file_path, "rb") as f:
                 col2.download_button(
                     label="📥 İndir",
