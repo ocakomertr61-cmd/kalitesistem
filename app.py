@@ -5,6 +5,8 @@ import os
 import json
 import shutil
 import re
+import zipfile
+import io
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="ALASAR GRUP - Kalite Yönetim Sistemi", page_icon="🛡️", layout="wide")
@@ -57,6 +59,21 @@ def save_uploaded_file_standard(uploaded_file, target_dir, target_filename):
             f.write(uploaded_file.getbuffer())
         return target_filename
     return "Yok"
+
+# --- TOPLU SIKIŞTIRMA (ZIP) YARDIMCI FONKSİYONU ---
+def create_system_zip():
+    """Yüklenen ve arşivlenen tüm fiziksel dosyaları bellekte ZIP dosyası haline getirir."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for folder in [UPLOAD_DIR, ARCHIVE_DIR]:
+            if os.path.exists(folder):
+                for root, _, files in os.walk(folder):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.join(os.path.basename(folder), file)
+                        zip_file.write(file_path, arcname)
+    zip_buffer.seek(0)
+    return zip_buffer
 
 # --- VARSAYILAN KULLANICI LİSTESİ VE ŞİFRELER ---
 DEFAULT_USERS = {
@@ -170,7 +187,9 @@ st.sidebar.title("🏢 ALASAR GRUP")
 st.sidebar.write(f"👤 **{st.session_state['username']}**")
 st.sidebar.caption(f"Rol: {st.session_state['role']}")
 
-if st.session_state["can_edit"]:
+if st.session_state["username"] == "Ömer OCAK":
+    st.sidebar.info("⚡ Superadmin / Tam Sistem Yetkilisi")
+elif st.session_state["can_edit"]:
     st.sidebar.success("✏️ Doküman Yükleme / Revize Yetkisi Var")
 else:
     st.sidebar.info("👁️ Sadece Okuma / İndirme Yetkisi Var")
@@ -194,18 +213,22 @@ if os.path.exists(EXCEL_FILE):
         )
 
 st.sidebar.markdown("---")
-modul = st.sidebar.radio(
-    "DEPARTMANLAR VE MENÜ:",
-    [
-        "👥 İNSAN KAYNAKLARI DEPARTMANI",
-        "⚙️ ÜRETİM DEPARTMANI",
-        "👔 YÖNETİM DEPARTMANI",
-        "🌐 ENTEGRE YÖNETİM SİSTEMİ DEPARTMANI",
-        "🛡️ KALİTE DEPARTMANI",
-        "📦 DEPO-SEVKİYAT DEPARTMANI",
-        "🔔 Bildirim Geçmişi"
-    ]
-)
+
+# MENÜ SEÇENEKLERİ (Ömer OCAK için özel yönetim modülü)
+menu_options = [
+    "👥 İNSAN KAYNAKLARI DEPARTMANI",
+    "⚙️ ÜRETİM DEPARTMANI",
+    "👔 YÖNETİM DEPARTMANI",
+    "🌐 ENTEGRE YÖNETİM SİSTEMİ DEPARTMANI",
+    "🛡️ KALİTE DEPARTMANI",
+    "📦 DEPO-SEVKİYAT DEPARTMANI",
+    "🔔 Bildirim Geçmişi"
+]
+
+if st.session_state["username"] == "Ömer OCAK":
+    menu_options.append("⚙️ SİSTEM YÖNETİMİ & BAKIŞ")
+
+modul = st.sidebar.radio("DEPARTMANLAR VE MENÜ:", menu_options)
 
 st.sidebar.markdown("---")
 
@@ -240,8 +263,55 @@ if not df_notif_top.empty:
     detail_val = latest.get('Detay / Doküman', '-')
     st.info(f"🔔 **Son Güncelleme / Revizyon Bildirimi:** [{time_val}] **{user_val}** tarafından **{dept_val}** alanında işlem yapıldı: *{detail_val}*")
 
+# --- Sadece Ömer OCAK Kullanıcısına Özel SİSTEM YÖNETİMİ & TEMİZLEME MODÜLÜ ---
+if modul == "⚙️ SİSTEM YÖNETİMİ & BAKIŞ":
+    st.title("⚙️ Sistem Yönetimi ve Toplu İşlem Paneli")
+    st.warning("⚠️ Bu panel sadece **Ömer OCAK** tarafından görüntülenebilir ve yetkilendirilmiştir.")
+
+    st.markdown("### 📦 1. Tüm Belgeleri Toplu İndir (ZIP)")
+    st.write("Sistemde yuklenen tüm aktif ve arşivlenmiş dokümanları tek bir arşiv dosyası (.zip) olarak indirebilirsiniz.")
+    
+    zip_data = create_system_zip()
+    st.download_button(
+        label="📦 Tüm Sistem Dosyalarını İndir (.ZIP)",
+        data=zip_data,
+        file_name=f"Alasar_Tum_Sistem_Belgeleri_{datetime.date.today()}.zip",
+        mime="application/zip",
+        key="btn_zip_all"
+    )
+
+    st.markdown("---")
+    st.markdown("### 🧹 2. Sistem Temizleme ve Tam Sıfırlama")
+    st.error("🚨 **DİKKAT:** Bu işlem sistemdeki yüklü tüm dosyaları, arşiv klasörünü ve Excel veri tabanındaki tüm kayıtları kalıcı olarak siler!")
+    
+    confirm_check = st.checkbox("Sistemdeki tüm belgeleri ve veri tabanı kayıtlarını silmek istediğimi onaylıyorum.")
+    
+    if st.button("🔴 SİSTEMİ VE TÜM BELGELERİ TEMİZLE", disabled=not confirm_check):
+        # 1. Fiziksel Dosyaları Sil
+        for folder in [UPLOAD_DIR, ARCHIVE_DIR]:
+            if os.path.exists(folder):
+                for filename in os.listdir(folder):
+                    file_path = os.path.join(folder, filename)
+                    try:
+                        if os.path.isfile(file_path) or os.path.islink(file_path):
+                            os.unlink(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                    except Exception as e:
+                        st.error(f"Dosya silinirken hata oluştu: {file_path} - {e}")
+        
+        # 2. Excel Veri Tabanını Temizle / Yeniden Oluştur
+        with pd.ExcelWriter(EXCEL_FILE, engine='openpyxl') as writer:
+            pd.DataFrame(columns=["Tarih / Saat", "Departman", "Doküman No", "Doküman Adı", "Revizyon No", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Revizyon Mu"]).to_excel(writer, sheet_name="Departman_Dokumanlari", index=False)
+            pd.DataFrame(columns=["Tarih / Saat", "Departman", "Doküman No", "Doküman Adı", "Revizyon No", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Arşivlenme Tarihi"]).to_excel(writer, sheet_name="Arsiv_Dokumanlari", index=False)
+            pd.DataFrame(columns=["Tarih / Saat", "İşlemi Yapan", "Departman / Modül", "Detay / Doküman"]).to_excel(writer, sheet_name="Bildirimler", index=False)
+
+        add_notification("Ömer OCAK", "Sistem Yönetimi", "Tüm sistem belgeleri ve veri tabanı kayıtları sıfırlandı.")
+        st.success("✅ Tüm sistem belgeleri ve veri tabanı başarıyla temizlendi!")
+        st.rerun()
+
 # --- BİLDİRİM GEÇMİŞİ MODÜLÜ ---
-if modul == "🔔 Bildirim Geçmişi":
+elif modul == "🔔 Bildirim Geçmişi":
     st.title("🔔 Tüm Güncelleme & Revizyon Geçmişi")
     st.write("Sistem üzerinde yapılan tüm departman doküman yükleme, revizyon ve arşivleme işlemlerinin dökümü:")
     df_notif_all = load_data("Bildirimler")
