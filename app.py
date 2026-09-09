@@ -386,12 +386,14 @@ else:
                     st.success(f"✅ `{doc_no}` numaralı yeni doküman panel bilgileriyle başarıyla yüklendi: **{file_name}**")
                     st.rerun()
 
-        # EĞER REVİZYON ÇAKIŞMASI VARSA ONAY BUTONLARI
+        # EĞER REVİZYON ÇAKIŞMASI VARSA ONAY BUTONLARI (3 SEÇENEKLİ YAPI)
         if "pending_rev" in st.session_state and st.session_state["pending_rev"]["dept"] == dept_name:
             p = st.session_state["pending_rev"]
-            st.error("Bu işlem bir **REVİZYON** güncellemesi mi?")
-            col_rev1, col_rev2 = st.columns(2)
+            st.error("Lütfen yapmak istediğiniz işlemi seçiniz:")
             
+            col_rev1, col_rev2, col_rev3 = st.columns(3)
+            
+            # 1. OPTİON: REVİZYON OLARAK İŞLE (Eski dosyayı arşive taşı)
             if col_rev1.button("🔄 EVET, Bu Bir Revizyondur (Eski Dosyayı Arşive Kaldır)"):
                 now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
                 old_info = p["old_row"]
@@ -453,7 +455,37 @@ else:
                 st.success(f"✅ Revizyon başarıyla işlendi! Yeni dosya **{new_file_name}** olarak canlıya alındı, eski versiyon arşive kaldırıldı.")
                 st.rerun()
 
-            if col_rev2.button("❌ HAYIR, Farklı Doküman (İptal Et)"):
+            # 2. OPTİON: FARKLI DOKÜMAN OLARAK EKLE (Eski dosyayı bozmadan yeni kayıt oluştur)
+            if col_rev2.button("📄 EVET, Farklı Bir Doküman Olarak Ekle"):
+                now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                
+                # Yeni yüklenen dosyayı standart isimle kaydet
+                _, ext = os.path.splitext(p["uploaded_file"].name)
+                new_standard_fname = generate_standard_filename(p["doc_no"], p["doc_title"], p["doc_rev"], ext)
+                new_file_name = save_uploaded_file_standard(p["uploaded_file"], UPLOAD_DIR, new_standard_fname)
+                
+                new_rec = {
+                    "Tarih / Saat": now_str,
+                    "Departman": dept_name,
+                    "Doküman No": p["doc_no"],
+                    "Doküman Adı": p["doc_title"],
+                    "Revizyon No": p["doc_rev"],
+                    "Açıklama / Not": p["doc_note"],
+                    "Dosya Adı": new_file_name,
+                    "Ekleyen": st.session_state["username"],
+                    "Revizyon Mu": "Hayır"
+                }
+                
+                df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
+                save_data(df_docs, "Departman_Dokumanlari")
+                
+                add_notification(st.session_state["username"], dept_name, f"Yeni Doküman Eklendi: {p['doc_no']} - {p['doc_title']} (Rev: {p['doc_rev']})")
+                del st.session_state["pending_rev"]
+                st.success(f"✅ Doküman başarıyla eklendi! Dosya adı: **{new_file_name}**")
+                st.rerun()
+
+            # 3. OPTİON: İŞLEMİ İPTAL ET
+            if col_rev3.button("❌ İŞLEMİ İPTAL ET"):
                 del st.session_state["pending_rev"]
                 st.info("İşlem iptal edildi.")
                 st.rerun()
