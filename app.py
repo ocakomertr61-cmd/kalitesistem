@@ -2,24 +2,44 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
+import json
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="ALASAR GRUP - Kalite Yönetim Sistemi", page_icon="🛡️", layout="wide")
 
-# --- KULLANICI LİSTESİ VE ŞİFRELER ---
-USERS = {
+# --- DOSYA VE KLASÖR YOLLARI ---
+EXCEL_FILE = "alasar_kalite_vt.xlsx"
+USERS_FILE = "users.json"
+UPLOAD_DIR = "yuklenen_belgeler"
+
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+# --- VARSAYILAN KULLANICI LİSTESİ VE ŞİFRELER ---
+DEFAULT_USERS = {
     "Mehmet Alaşar": {"password": "malsr3434.", "role": "Yönetici", "can_edit": False},
     "Dilber Alaşar": {"password": "dalsr4141.", "role": "Yönetici", "can_edit": True},
     "Nilay Kiraz": {"password": "nkrz5151.", "role": "İK", "can_edit": False},
     "Ömer OCAK": {"password": "oock6161.", "role": "Kalite Sistem Mühendisi", "can_edit": True}
 }
 
-# --- KLASÖR VE EXCEL AYARLARI ---
-EXCEL_FILE = "alasar_kalite_vt.xlsx"
-UPLOAD_DIR = "yuklenen_belgeler"
+# --- KULLANICI VERİLERİNİ YÜKLEME / KAYDETME ---
+def load_users():
+    if os.path.exists(USERS_FILE):
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return DEFAULT_USERS
+    else:
+        save_users(DEFAULT_USERS)
+        return DEFAULT_USERS
 
-if not os.path.exists(UPLOAD_DIR):
-    os.makedirs(UPLOAD_DIR)
+def save_users(users_dict):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users_dict, f, ensure_ascii=False, indent=4)
+
+USERS = load_users()
 
 # --- VERİ TABANI HAZIRLAMA ---
 def load_data(sheet_name):
@@ -86,20 +106,21 @@ if not st.session_state["logged_in"]:
                     st.session_state["logged_in"] = True
                     st.session_state["username"] = selected_user
                     st.session_state["role"] = USERS[selected_user]["role"]
-                    st.session_state["can_edit"] = USERS[selected_user]["can_edit"]
+                    # Yükleme Yetkisi Sadece Ömer OCAK ve Dilber Alaşar için Aktif
+                    st.session_state["can_edit"] = selected_user in ["Ömer OCAK", "Dilber Alaşar"]
                     st.success(f"Hoş geldiniz, {selected_user}!")
                     st.rerun()
                 else:
                     st.error("Hatalı şifre! Lütfen tekrar deneyiniz.")
     st.stop()
 
-# --- ANA SİSTEM ---
+# --- ANA SİSTEM SOL MENÜ ---
 st.sidebar.title("🏢 ALASAR GRUP")
 st.sidebar.write(f"👤 **{st.session_state['username']}**")
 st.sidebar.caption(f"Rol: {st.session_state['role']}")
 
 if st.session_state["can_edit"]:
-    st.sidebar.success("✏️ Düzenleme / Yükleme Yetkisi Var")
+    st.sidebar.success("✏️ Doküman Yükleme Yetkisi Var")
 else:
     st.sidebar.info("👁️ Sadece Okuma / İndirme Yetkisi Var")
 
@@ -134,7 +155,30 @@ modul = st.sidebar.radio(
     ]
 )
 
-# --- CANLI BİLDİRİM PANELİ (ÜST KISIM) ---
+st.sidebar.markdown("---")
+
+# --- KULLANICI ŞİFRE DEĞİŞTİRME ALANI (SOL MENÜ ALT KISIM) ---
+with st.sidebar.expander("🔑 Şifremi Değiştir"):
+    with st.form("change_password_form", clear_on_submit=True):
+        old_pass = st.text_input("Mevcut Şifre", type="password")
+        new_pass = st.text_input("Yeni Şifre", type="password")
+        new_pass_confirm = st.text_input("Yeni Şifre (Tekrar)", type="password")
+        btn_pass = st.form_submit_button("Güncelle")
+        
+        if btn_pass:
+            current_user = st.session_state["username"]
+            if old_pass != USERS[current_user]["password"]:
+                st.error("Mevcut şifreniz hatalı!")
+            elif new_pass != new_pass_confirm:
+                st.error("Yeni şifreler eşleşmiyor!")
+            elif len(new_pass) < 4:
+                st.error("Şifre en az 4 karakter olmalıdır!")
+            else:
+                USERS[current_user]["password"] = new_pass
+                save_users(USERS)
+                st.success("Şifreniz başarıyla değiştirildi!")
+
+# --- CANLI BİLDİRİM PANELİ (SİTE EN ÜST KISMI) ---
 df_notif_top = load_data("Bildirimler")
 if not df_notif_top.empty:
     latest = df_notif_top.iloc[0]
@@ -305,7 +349,7 @@ elif modul == "🌐 Entegre Yönetim Sistemleri (ISO)":
 elif modul == "📁 Yüklenen Dosyalar Kütüphanesi":
     st.title("📁 Yüklenen Belgeler & Doküman Kütüphanesi")
     
-    # EĞER KULLANICI EDİTÖR İSE BELGE YÜKLEME ALANI GÖSTER
+    # SADECE ÖMER OCAK VE DİLBER ALAŞAR DOKÜMAN YÜKLEYEBİLİR
     if st.session_state["can_edit"]:
         with st.form("genel_dosya_form", clear_on_submit=True):
             st.subheader("📤 Yeni Doküman / Belge Yükle")
@@ -323,7 +367,7 @@ elif modul == "📁 Yüklenen Dosyalar Kütüphanesi":
     else:
         st.info("Sistemdeki tüm dokümanları ve yüklenen dosyaları buradan görüntüleyebilir ve indirebilirsiniz.")
     
-    # YÜKLENEN DOSYALARI LİSTELEME VE İNDİRME
+    # YÜKLENEN DOSYALARI LİSTELEME VE İNDİRME (TÜM KULLANICILAR İÇİN AÇIK)
     files = os.listdir(UPLOAD_DIR)
     if not files:
         st.warning("Henüz sisteme yüklenmiş bir dosya bulunmuyor.")
