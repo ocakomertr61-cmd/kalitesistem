@@ -214,16 +214,8 @@ if os.path.exists(EXCEL_FILE):
 
 st.sidebar.markdown("---")
 
-DEPARTMENTS_LIST = [
-    "İNSAN KAYNAKLARI DEPARTMANI",
-    "ÜRETİM DEPARTMANI",
-    "YÖNETİM DEPARTMANI",
-    "ENTEGRE YÖNETİM SİSTEMİ DEPARTMANI",
-    "KALİTE DEPARTMANI",
-    "DEPO-SEVKİYAT DEPARTMANI"
-]
-
 menu_options = [
+    "🔍 GENEL ARAMA MERKEZİ",
     "👥 İNSAN KAYNAKLARI DEPARTMANI",
     "⚙️ ÜRETİM DEPARTMANI",
     "👔 YÖNETİM DEPARTMANI",
@@ -232,9 +224,6 @@ menu_options = [
     "📦 DEPO-SEVKİYAT DEPARTMANI",
     "🔔 Bildirim Geçmişi"
 ]
-
-if st.session_state["can_edit"]:
-    menu_options.insert(0, "📁 TOPLU DOSYA YÜKLEME & DAĞITIM")
 
 if st.session_state["username"] == "Ömer OCAK":
     menu_options.append("⚙️ SİSTEM YÖNETİMİ & BAKIŞ")
@@ -274,82 +263,73 @@ if not df_notif_top.empty:
     detail_val = latest.get('Detay / Doküman', '-')
     st.info(f"🔔 **Son Güncelleme / Revizyon Bildirimi:** [{time_val}] **{user_val}** tarafından **{dept_val}** alanında işlem yapıldı: *{detail_val}*")
 
-# --- TOPLU DOSYA YÜKLEME VE DEPARTMANLARA DAĞITIM MODÜLÜ ---
-if modul == "📁 TOPLU DOSYA YÜKLEME & DAĞITIM":
-    st.title("📁 Toplu Dosya Yükleme ve Departman Dağıtım Paneli")
-    st.caption("Bu panel üzerinden çoklu dosya seçebilir, onay kutularıyla işaretleyip istediğiniz departmanlara toplu atama yapabilirsiniz.")
+# --- GENEL ARAMA MERKEZİ ---
+if modul == "🔍 GENEL ARAMA MERKEZİ":
+    st.title("🔍 Tüm Sistem Genel Doküman Arama Merkezi")
+    st.caption("Sistemdeki tüm aktif ve arşivlenmiş dokümanları departman bağımsız tek bir arama çubuğu üzerinden anında sorgulayabilirsiniz.")
 
-    uploaded_files = st.file_uploader(
-        "Toplu Dosya veya Klasör İçeriği Seçiniz", 
-        accept_multiple_files=True,
-        type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"]
-    )
+    search_query = st.text_input("🔎 Doküman Adı, Doküman No, Açıklama veya Yükleyen Kişi Ara...", key="global_search").strip().lower()
+    
+    df_docs = load_data("Departman_Dokumanlari")
+    df_archive = load_data("Arsiv_Dokumanlari")
 
-    if uploaded_files:
-        st.subheader("📋 Yüklenen Dosyaların Atama ve Onay Tablosu")
-        st.write("Lütfen aktarmak istediğiniz dosyaların solundaki tik kutusunu işaretleyin, bilgilerini doldurun ve departmanı seçerek onaylayın.")
-
-        df_docs = load_data("Departman_Dokumanlari")
-        
-        with st.form("bulk_upload_form"):
-            selected_dept = st.selectbox("🎯 Seçili Dosyaların Gönderileceği Hedef Departman", DEPARTMENTS_LIST)
-            default_note = st.text_input("Ortak Açıklama / Not (Opsiyonel)", value="Toplu Yükleme")
-            
-            st.markdown("---")
-            
-            bulk_data = []
-            for idx, file in enumerate(uploaded_files):
-                c1, c2, c3, c4 = st.columns([0.5, 3, 2, 1.5])
-                
-                # Orijinal dosya adından uzantıyı çıkarıp varsayılan isim üretme
-                base_name, ext = os.path.splitext(file.name)
-                
-                chk = c1.checkbox("", value=True, key=f"chk_{idx}")
-                c2.write(f"📄 **{file.name}**")
-                doc_no_val = c3.text_input(f"Doküman No", value=f"DOC-{idx+1:02d}", key=f"no_{idx}")
-                doc_rev_val = c4.text_input(f"Revizyon", value="00", key=f"rev_{idx}")
-                
-                if chk:
-                    bulk_data.append({
-                        "file_obj": file,
-                        "orig_name": file.name,
-                        "ext": ext,
-                        "doc_no": doc_no_val,
-                        "doc_title": base_name,
-                        "doc_rev": doc_rev_val
-                    })
-            
-            submit_bulk = st.form_submit_button("🚀 SEÇİLİ DOSYALARI DEPARTMANA GÖNDER VE ONAYLAT")
-
-        if submit_bulk:
-            if not bulk_data:
-                st.warning("Lütfen işlem yapmak için en az bir dosyanın yanındaki tik kutusunu işaretleyin.")
+    tab_g1, tab_g2 = st.tabs(["📄 Aktif Dokümanlar İçinde Ara", "📁 Arşiv Dokümanları İçinde Ara"])
+    
+    with tab_g1:
+        if not df_docs.empty:
+            if search_query:
+                filtered_df = df_docs[
+                    df_docs["Doküman Adı"].astype(str).str.lower().str.contains(search_query) |
+                    df_docs["Doküman No"].astype(str).str.lower().str.contains(search_query) |
+                    df_docs["Açıklama / Not"].astype(str).str.lower().str.contains(search_query) |
+                    df_docs["Departman"].astype(str).str.lower().str.contains(search_query) |
+                    df_docs["Ekleyen"].astype(str).str.lower().str.contains(search_query)
+                ]
             else:
-                success_count = 0
-                now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
-                
-                for item in bulk_data:
-                    standard_fname = generate_standard_filename(item["doc_no"], item["doc_title"], item["doc_rev"], item["ext"])
-                    saved_fname = save_uploaded_file_standard(item["file_obj"], UPLOAD_DIR, standard_fname)
-                    
-                    new_rec = {
-                        "Tarih / Saat": now_str,
-                        "Departman": selected_dept,
-                        "Doküman No": item["doc_no"].upper(),
-                        "Doküman Adı": item["doc_title"],
-                        "Revizyon No": item["doc_rev"],
-                        "Açıklama / Not": default_note,
-                        "Dosya Adı": saved_fname,
-                        "Ekleyen": st.session_state["username"],
-                        "Revizyon Mu": "Hayır"
-                    }
-                    df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
-                    success_count += 1
-                
-                save_data(df_docs, "Departman_Dokumanlari")
-                add_notification(st.session_state["username"], selected_dept, f"Toplu Yükleme Yapıldı: {success_count} adet doküman aktarıldı.")
-                st.success(f"🎉 **{success_count}** adet dosya başarıyla **{selected_dept}** bünyesine aktarıldı!")
-                st.rerun()
+                filtered_df = df_docs
+
+            st.write(f"Bulunan Doküman Sayısı: **{len(filtered_df)}**")
+            st.dataframe(filtered_df, use_container_width=True)
+
+            for idx, row in filtered_df.iterrows():
+                f_name = row.get("Dosya Adı", "Yok")
+                if f_name and f_name != "Yok":
+                    f_path = os.path.join(UPLOAD_DIR, f_name)
+                    if os.path.exists(f_path):
+                        c1, c2 = st.columns([3, 1])
+                        c1.write(f"📄 **[{row.get('Departman')}]** - **[{row.get('Doküman No')}]** {row.get('Doküman Adı')} *(Rev: {row.get('Revizyon No')})*")
+                        with open(f_path, "rb") as f:
+                            c2.download_button(label="📥 İndir", data=f, file_name=f_name, key=f"glob_act_{idx}_{f_name}")
+        else:
+            st.info("Sistemde henüz aktif doküman bulunmuyor.")
+
+    with tab_g2:
+        if not df_archive.empty:
+            if search_query:
+                filtered_arch = df_archive[
+                    df_archive["Doküman Adı"].astype(str).str.lower().str.contains(search_query) |
+                    df_archive["Doküman No"].astype(str).str.lower().str.contains(search_query) |
+                    df_archive["Açıklama / Not"].astype(str).str.lower().str.contains(search_query) |
+                    df_archive["Departman"].astype(str).str.lower().str.contains(search_query) |
+                    df_archive["Ekleyen"].astype(str).str.lower().str.contains(search_query)
+                ]
+            else:
+                filtered_arch = df_archive
+
+            st.write(f"Bulunan Arşiv Doküman Sayısı: **{len(filtered_arch)}**")
+            st.dataframe(filtered_arch, use_container_width=True)
+
+            for idx, row in filtered_arch.iterrows():
+                f_name = row.get("Dosya Adı", "Yok")
+                if f_name and f_name != "Yok":
+                    f_path = os.path.join(ARCHIVE_DIR, f_name)
+                    if os.path.exists(f_path):
+                        c1, c2 = st.columns([3, 1])
+                        c1.write(f"📁 **[{row.get('Departman')}]** - **[{row.get('Doküman No')}]** {row.get('Doküman Adı')} *(Rev: {row.get('Revizyon No')})* - Arşiv: {row.get('Arşivlenme Tarihi')}")
+                        with open(f_path, "rb") as f:
+                            c2.download_button(label="📥 Eski Versiyonu İndir", data=f, file_name=f_name, key=f"glob_arch_{idx}_{f_name}")
+        else:
+            st.info("Sistemde henüz arşivlenmiş doküman bulunmuyor.")
 
 # --- Sadece Ömer OCAK Kullanıcısına Özel SİSTEM YÖNETİMİ & TEMİZLEME MODÜLÜ ---
 elif modul == "⚙️ SİSTEM YÖNETİMİ & BAKIŞ":
@@ -414,65 +394,133 @@ else:
     df_docs = load_data("Departman_Dokumanlari")
     df_archive = load_data("Arsiv_Dokumanlari")
     
-    # DOKÜMAN YÜKLEME VE REVİZYON KONTROL ALANI
+    # DOKÜMAN YÜKLEME ALANI (TEKLİ VEYA TOPLU SEÇENEKLİ)
     if st.session_state["can_edit"]:
-        st.subheader(f"📤 {dept_name} İçin Tekli Doküman Yükleme / Revize Etme")
+        st.subheader(f"📤 {dept_name} İçin Doküman Yükleme Paneli")
         
-        with st.form(f"form_{dept_name}"):
-            col1, col2, col3, col4 = st.columns([1.5, 2, 1, 2])
-            doc_no = col1.text_input("Doküman No / Kodu (Örn: PR-01, FR-05)").strip().upper()
-            doc_title = col2.text_input("Doküman Adı (Örn: İK Prosedürü, İizin Formu)")
-            doc_rev = col3.text_input("Revizyon No", value="00").strip()
-            doc_note = col4.text_input("Açıklama / Revizyon Notu (Örn: Maddeler Güncellendi)")
-            uploaded_file = st.file_uploader("Dosya Seçiniz (PDF, Word, Excel vb.)", type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"])
-            
-            submit_doc = st.form_submit_button("🔍 Dokümanı İncele ve İlerle")
-        
-        if submit_doc:
-            if not doc_no or not doc_title or uploaded_file is None:
-                st.error("Lütfen Doküman Numarası, Doküman Adı giriniz ve bir dosya seçiniz.")
-            else:
-                # DOKÜMAN NO KARŞILAŞTIRMA KONTROLÜ
-                existing = df_docs[(df_docs["Departman"] == dept_name) & (df_docs["Doküman No"] == doc_no)]
+        upload_mode = st.radio("Yükleme Modunu Seçiniz:", ["📄 Tekli Doküman Yükleme / Revize Etme", "📁 Toplu Çoklu Dosya Yükleme"], horizontal=True)
+
+        if upload_mode == "📄 Tekli Doküman Yükleme / Revize Etme":
+            with st.form(f"form_single_{dept_name}"):
+                col1, col2, col3, col4 = st.columns([1.5, 2, 1, 2])
+                doc_no = col1.text_input("Doküman No / Kodu (Örn: PR-01, FR-05)").strip().upper()
+                doc_title = col2.text_input("Doküman Adı (Örn: İK Prosedürü, İzin Formu)")
+                doc_rev = col3.text_input("Revizyon No", value="00").strip()
+                doc_note = col4.text_input("Açıklama / Revizyon Notu (Örn: Maddeler Güncellendi)")
+                uploaded_file = st.file_uploader("Dosya Seçiniz (PDF, Word, Excel vb.)", type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"])
                 
-                if not existing.empty:
-                    old_row = existing.iloc[0]
-                    st.warning(f"⚠️ **DİKKAT:** `{doc_no}` numaralı **'{old_row['Doküman Adı']}'** isimli doküman bu departmanda zaten mevcut!")
-                    st.info(f"📌 **Mevcut Dosya:** {old_row['Dosya Adı']} | **Revizyon:** {old_row.get('Revizyon No', '00')} | **Yükleyen:** {old_row['Ekleyen']} | **Tarih:** {old_row['Tarih / Saat']}")
-                    
-                    st.session_state["pending_rev"] = {
-                        "dept": dept_name,
-                        "doc_no": doc_no,
-                        "doc_title": doc_title,
-                        "doc_rev": doc_rev,
-                        "doc_note": doc_note,
-                        "uploaded_file": uploaded_file,
-                        "old_row": old_row.to_dict()
-                    }
+                submit_doc = st.form_submit_button("🔍 Dokümanı İncele ve İlerle")
+            
+            if submit_doc:
+                if not doc_no or not doc_title or uploaded_file is None:
+                    st.error("Lütfen Doküman Numarası, Doküman Adı giriniz ve bir dosya seçiniz.")
                 else:
-                    # Yeni doküman kaydı - Panel verisine göre standart isim oluştur
-                    _, ext = os.path.splitext(uploaded_file.name)
-                    standard_fname = generate_standard_filename(doc_no, doc_title, doc_rev, ext)
-                    file_name = save_uploaded_file_standard(uploaded_file, UPLOAD_DIR, standard_fname)
+                    existing = df_docs[(df_docs["Departman"] == dept_name) & (df_docs["Doküman No"] == doc_no)]
                     
-                    now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                    if not existing.empty:
+                        old_row = existing.iloc[0]
+                        st.warning(f"⚠️ **DİKKAT:** `{doc_no}` numaralı **'{old_row['Doküman Adı']}'** isimli doküman bu departmanda zaten mevcut!")
+                        st.info(f"📌 **Mevcut Dosya:** {old_row['Dosya Adı']} | **Revizyon:** {old_row.get('Revizyon No', '00')} | **Yükleyen:** {old_row['Ekleyen']} | **Tarih:** {old_row['Tarih / Saat']}")
+                        
+                        st.session_state["pending_rev"] = {
+                            "dept": dept_name,
+                            "doc_no": doc_no,
+                            "doc_title": doc_title,
+                            "doc_rev": doc_rev,
+                            "doc_note": doc_note,
+                            "uploaded_file": uploaded_file,
+                            "old_row": old_row.to_dict()
+                        }
+                    else:
+                        _, ext = os.path.splitext(uploaded_file.name)
+                        standard_fname = generate_standard_filename(doc_no, doc_title, doc_rev, ext)
+                        file_name = save_uploaded_file_standard(uploaded_file, UPLOAD_DIR, standard_fname)
+                        
+                        now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                        
+                        new_rec = {
+                            "Tarih / Saat": now_str,
+                            "Departman": dept_name,
+                            "Doküman No": doc_no,
+                            "Doküman Adı": doc_title,
+                            "Revizyon No": doc_rev,
+                            "Açıklama / Not": doc_note,
+                            "Dosya Adı": file_name,
+                            "Ekleyen": st.session_state["username"],
+                            "Revizyon Mu": "Hayır"
+                        }
+                        df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
+                        save_data(df_docs, "Departman_Dokumanlari")
+                        add_notification(st.session_state["username"], dept_name, f"Yeni Doküman Eklendi: {doc_no} - {doc_title} (Rev: {doc_rev})")
+                        st.success(f"✅ `{doc_no}` numaralı yeni doküman panel bilgileriyle başarıyla yüklendi: **{file_name}**")
+                        st.rerun()
+
+        elif upload_mode == "📁 Toplu Çoklu Dosya Yükleme":
+            uploaded_files = st.file_uploader(
+                f"{dept_name} İçin Toplu Dosya Seçiniz", 
+                accept_multiple_files=True,
+                type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"],
+                key=f"bulk_file_uploader_{dept_name}"
+            )
+
+            if uploaded_files:
+                st.subheader(f"📋 Toplu Dosya Onay Tablosu ({dept_name})")
+                
+                with st.form(f"bulk_form_{dept_name}"):
+                    default_note = st.text_input("Ortak Açıklama / Not (Opsiyonel)", value="Toplu Yükleme", key=f"b_note_{dept_name}")
+                    st.markdown("---")
                     
-                    new_rec = {
-                        "Tarih / Saat": now_str,
-                        "Departman": dept_name,
-                        "Doküman No": doc_no,
-                        "Doküman Adı": doc_title,
-                        "Revizyon No": doc_rev,
-                        "Açıklama / Not": doc_note,
-                        "Dosya Adı": file_name,
-                        "Ekleyen": st.session_state["username"],
-                        "Revizyon Mu": "Hayır"
-                    }
-                    df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
-                    save_data(df_docs, "Departman_Dokumanlari")
-                    add_notification(st.session_state["username"], dept_name, f"Yeni Doküman Eklendi: {doc_no} - {doc_title} (Rev: {doc_rev})")
-                    st.success(f"✅ `{doc_no}` numaralı yeni doküman panel bilgileriyle başarıyla yüklendi: **{file_name}**")
-                    st.rerun()
+                    bulk_data = []
+                    for idx, file in enumerate(uploaded_files):
+                        c1, c2, c3, c4 = st.columns([0.5, 3, 2, 1.5])
+                        base_name, ext = os.path.splitext(file.name)
+                        
+                        chk = c1.checkbox("", value=True, key=f"chk_dept_{dept_name}_{idx}")
+                        c2.write(f"📄 **{file.name}**")
+                        doc_no_val = c3.text_input("Doküman No", value=f"DOC-{idx+1:02d}", key=f"no_dept_{dept_name}_{idx}")
+                        doc_rev_val = c4.text_input("Revizyon", value="00", key=f"rev_dept_{dept_name}_{idx}")
+                        
+                        if chk:
+                            bulk_data.append({
+                                "file_obj": file,
+                                "orig_name": file.name,
+                                "ext": ext,
+                                "doc_no": doc_no_val,
+                                "doc_title": base_name,
+                                "doc_rev": doc_rev_val
+                            })
+                    
+                    submit_bulk = st.form_submit_button("🚀 SEÇİLİ DOSYALARI DEPARTMANA YÜKLE")
+
+                if submit_bulk:
+                    if not bulk_data:
+                        st.warning("Lütfen işlem yapmak için en az bir dosyanın yanındaki tik kutusunu işaretleyin.")
+                    else:
+                        success_count = 0
+                        now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                        
+                        for item in bulk_data:
+                            standard_fname = generate_standard_filename(item["doc_no"], item["doc_title"], item["doc_rev"], item["ext"])
+                            saved_fname = save_uploaded_file_standard(item["file_obj"], UPLOAD_DIR, standard_fname)
+                            
+                            new_rec = {
+                                "Tarih / Saat": now_str,
+                                "Departman": dept_name,
+                                "Doküman No": item["doc_no"].upper(),
+                                "Doküman Adı": item["doc_title"],
+                                "Revizyon No": item["doc_rev"],
+                                "Açıklama / Not": default_note,
+                                "Dosya Adı": saved_fname,
+                                "Ekleyen": st.session_state["username"],
+                                "Revizyon Mu": "Hayır"
+                            }
+                            df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
+                            success_count += 1
+                        
+                        save_data(df_docs, "Departman_Dokumanlari")
+                        add_notification(st.session_state["username"], dept_name, f"Toplu Yükleme Yapıldı: {success_count} adet doküman eklendi.")
+                        st.success(f"🎉 **{success_count}** adet dosya başarıyla **{dept_name}** bünyesine eklendi!")
+                        st.rerun()
 
         # EĞER REVİZYON ÇAKIŞMASI VARSA ONAY BUTONLARI (3 SEÇENEKLİ YAPI)
         if "pending_rev" in st.session_state and st.session_state["pending_rev"]["dept"] == dept_name:
@@ -481,13 +529,11 @@ else:
             
             col_rev1, col_rev2, col_rev3 = st.columns(3)
             
-            # 1. OPTİON: REVİZYON OLARAK İŞLE (Eski dosyayı arşive taşı)
             if col_rev1.button("🔄 EVET, Bu Bir Revizyondur (Eski Dosyayı Arşive Kaldır)"):
                 now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
                 old_info = p["old_row"]
                 old_file_name = old_info.get("Dosya Adı", "Yok")
                 
-                # 1. Eski Dosyayı 'arsivlenenler' Klasörüne Zaman Damgasıyla Taşı
                 if old_file_name != "Yok":
                     src_p = os.path.join(UPLOAD_DIR, old_file_name)
                     if os.path.exists(src_p):
@@ -501,7 +547,6 @@ else:
                 else:
                     archived_file_ref = "Yok"
                 
-                # 2. Eski Doküman Verisini Excel 'Arsiv_Dokumanlari' Sayfasına Ekle
                 old_archive_rec = {
                     "Tarih / Saat": old_info.get("Tarih / Saat", "-"),
                     "Departman": dept_name,
@@ -516,10 +561,8 @@ else:
                 df_archive = pd.concat([pd.DataFrame([old_archive_rec]), df_archive], ignore_index=True)
                 save_data(df_archive, "Arsiv_Dokumanlari")
                 
-                # 3. Eski Dokümanı Aktif Listeden Çıkar
                 df_docs = df_docs[~((df_docs["Departman"] == dept_name) & (df_docs["Doküman No"] == p["doc_no"]))]
                 
-                # 4. Yeni Revize Dosyayı PANEL BİLGİLERİNE GÖRE İSİMLENDİR, Kaydet ve Aktif Listeye Ekle
                 _, ext = os.path.splitext(p["uploaded_file"].name)
                 new_standard_fname = generate_standard_filename(p["doc_no"], p["doc_title"], p["doc_rev"], ext)
                 new_file_name = save_uploaded_file_standard(p["uploaded_file"], UPLOAD_DIR, new_standard_fname)
@@ -543,11 +586,9 @@ else:
                 st.success(f"✅ Revizyon başarıyla işlendi! Yeni dosya **{new_file_name}** olarak canlıya alındı, eski versiyon arşive kaldırıldı.")
                 st.rerun()
 
-            # 2. OPTİON: FARKLI DOKÜMAN OLARAK EKLE (Eski dosyayı bozmadan yeni kayıt oluştur)
             if col_rev2.button("📄 EVET, Farklı Bir Doküman Olarak Ekle"):
                 now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
                 
-                # Yeni yüklenen dosyayı standart isimle kaydet
                 _, ext = os.path.splitext(p["uploaded_file"].name)
                 new_standard_fname = generate_standard_filename(p["doc_no"], p["doc_title"], p["doc_rev"], ext)
                 new_file_name = save_uploaded_file_standard(p["uploaded_file"], UPLOAD_DIR, new_standard_fname)
@@ -572,13 +613,15 @@ else:
                 st.success(f"✅ Doküman başarıyla eklendi! Dosya adı: **{new_file_name}**")
                 st.rerun()
 
-            # 3. OPTİON: İŞLEMİ İPTAL ET
             if col_rev3.button("❌ İŞLEMİ İPTAL ET"):
                 del st.session_state["pending_rev"]
                 st.info("İşlem iptal edildi.")
                 st.rerun()
                 
         st.markdown("---")
+
+    # DEPARTMAN İÇİ CANLI HIZLI ARAMA ÇUBUĞU
+    dept_search = st.text_input(f"🔍 {dept_name} İçinde Hızlı Dosya Ara (Kod, Ad, Not)...", key=f"search_{dept_name}").strip().lower()
 
     # AİT OLDUĞU DEPARTMANIN DOKÜMANLARINI SEKMELERLE LİSTELEME
     tab1, tab2, tab3 = st.tabs(["📄 Aktif Dokümanlar", "🔄 Son Revizeler / Değişiklikler", "📁 Arşivlenen Eski Versiyonlar"])
@@ -595,8 +638,16 @@ else:
 
     # TAB 1: AKTİF DOKÜMANLAR
     with tab1:
+        if not dept_active_docs.empty and dept_search:
+            dept_active_docs = dept_active_docs[
+                dept_active_docs["Doküman Adı"].astype(str).str.lower().str.contains(dept_search) |
+                dept_active_docs["Doküman No"].astype(str).str.lower().str.contains(dept_search) |
+                dept_active_docs["Açıklama / Not"].astype(str).str.lower().str.contains(dept_search) |
+                dept_active_docs["Ekleyen"].astype(str).str.lower().str.contains(dept_search)
+            ]
+
         if dept_active_docs.empty:
-            st.warning("Henüz bu departmana ait aktif doküman bulunmuyor.")
+            st.warning("Arama kriterlerine uygun aktif doküman bulunamadı.")
         else:
             show_cols = [c for c in ["Tarih / Saat", "Doküman No", "Doküman Adı", "Revizyon No", "Açıklama / Not", "Dosya Adı", "Ekleyen", "Revizyon Mu"] if c in dept_active_docs.columns]
             st.dataframe(dept_active_docs[show_cols], use_container_width=True)
@@ -624,9 +675,16 @@ else:
             revised_docs = dept_active_docs[dept_active_docs["Revizyon Mu"] == "Evet"]
         else:
             revised_docs = pd.DataFrame()
+
+        if not revised_docs.empty and dept_search:
+            revised_docs = revised_docs[
+                revised_docs["Doküman Adı"].astype(str).str.lower().str.contains(dept_search) |
+                revised_docs["Doküman No"].astype(str).str.lower().str.contains(dept_search) |
+                revised_docs["Açıklama / Not"].astype(str).str.lower().str.contains(dept_search)
+            ]
             
         if revised_docs.empty:
-            st.info("Bu departmanda henüz revize edilmiş bir doküman bulunmuyor.")
+            st.info("Bu kriterlerde revize edilmiş bir doküman bulunmuyor.")
         else:
             st.subheader("🔄 Son Revize Edilen Güncel Dokümanlar")
             show_cols_rev = [c for c in ["Tarih / Saat", "Doküman No", "Doküman Adı", "Revizyon No", "Açıklama / Not", "Dosya Adı", "Ekleyen"] if c in revised_docs.columns]
@@ -644,8 +702,15 @@ else:
 
     # TAB 3: ARŞİVLENEN ESKİ VERSİYONLAR
     with tab3:
+        if not dept_archive_docs.empty and dept_search:
+            dept_archive_docs = dept_archive_docs[
+                dept_archive_docs["Doküman Adı"].astype(str).str.lower().str.contains(dept_search) |
+                dept_archive_docs["Doküman No"].astype(str).str.lower().str.contains(dept_search) |
+                dept_archive_docs["Açıklama / Not"].astype(str).str.lower().str.contains(dept_search)
+            ]
+
         if dept_archive_docs.empty:
-            st.info("Bu departman için arşivlenmiş eski bir doküman versiyonu bulunmuyor.")
+            st.info("Bu kriterlerde arşivlenmiş eski bir doküman versiyonu bulunmuyor.")
         else:
             st.subheader("📁 Arşive Kaldırılan Eski Versiyon Dokümanlar")
             show_cols_arch = [c for c in ["Arşivlenme Tarihi", "Doküman No", "Doküman Adı", "Revizyon No", "Açıklama / Not", "Dosya Adı", "Ekleyen"] if c in dept_archive_docs.columns]
