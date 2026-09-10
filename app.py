@@ -214,7 +214,15 @@ if os.path.exists(EXCEL_FILE):
 
 st.sidebar.markdown("---")
 
-# MENÜ SEÇENEKLERİ (Ömer OCAK için özel yönetim modülü)
+DEPARTMENTS_LIST = [
+    "İNSAN KAYNAKLARI DEPARTMANI",
+    "ÜRETİM DEPARTMANI",
+    "YÖNETİM DEPARTMANI",
+    "ENTEGRE YÖNETİM SİSTEMİ DEPARTMANI",
+    "KALİTE DEPARTMANI",
+    "DEPO-SEVKİYAT DEPARTMANI"
+]
+
 menu_options = [
     "👥 İNSAN KAYNAKLARI DEPARTMANI",
     "⚙️ ÜRETİM DEPARTMANI",
@@ -224,6 +232,9 @@ menu_options = [
     "📦 DEPO-SEVKİYAT DEPARTMANI",
     "🔔 Bildirim Geçmişi"
 ]
+
+if st.session_state["can_edit"]:
+    menu_options.insert(0, "📁 TOPLU DOSYA YÜKLEME & DAĞITIM")
 
 if st.session_state["username"] == "Ömer OCAK":
     menu_options.append("⚙️ SİSTEM YÖNETİMİ & BAKIŞ")
@@ -263,8 +274,85 @@ if not df_notif_top.empty:
     detail_val = latest.get('Detay / Doküman', '-')
     st.info(f"🔔 **Son Güncelleme / Revizyon Bildirimi:** [{time_val}] **{user_val}** tarafından **{dept_val}** alanında işlem yapıldı: *{detail_val}*")
 
+# --- TOPLU DOSYA YÜKLEME VE DEPARTMANLARA DAĞITIM MODÜLÜ ---
+if modul == "📁 TOPLU DOSYA YÜKLEME & DAĞITIM":
+    st.title("📁 Toplu Dosya Yükleme ve Departman Dağıtım Paneli")
+    st.caption("Bu panel üzerinden çoklu dosya seçebilir, onay kutularıyla işaretleyip istediğiniz departmanlara toplu atama yapabilirsiniz.")
+
+    uploaded_files = st.file_uploader(
+        "Toplu Dosya veya Klasör İçeriği Seçiniz", 
+        accept_multiple_files=True,
+        type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"]
+    )
+
+    if uploaded_files:
+        st.subheader("📋 Yüklenen Dosyaların Atama ve Onay Tablosu")
+        st.write("Lütfen aktarmak istediğiniz dosyaların solundaki tik kutusunu işaretleyin, bilgilerini doldurun ve departmanı seçerek onaylayın.")
+
+        df_docs = load_data("Departman_Dokumanlari")
+        
+        with st.form("bulk_upload_form"):
+            selected_dept = st.selectbox("🎯 Seçili Dosyaların Gönderileceği Hedef Departman", DEPARTMENTS_LIST)
+            default_note = st.text_input("Ortak Açıklama / Not (Opsiyonel)", value="Toplu Yükleme")
+            
+            st.markdown("---")
+            
+            bulk_data = []
+            for idx, file in enumerate(uploaded_files):
+                c1, c2, c3, c4 = st.columns([0.5, 3, 2, 1.5])
+                
+                # Orijinal dosya adından uzantıyı çıkarıp varsayılan isim üretme
+                base_name, ext = os.path.splitext(file.name)
+                
+                chk = c1.checkbox("", value=True, key=f"chk_{idx}")
+                c2.write(f"📄 **{file.name}**")
+                doc_no_val = c3.text_input(f"Doküman No", value=f"DOC-{idx+1:02d}", key=f"no_{idx}")
+                doc_rev_val = c4.text_input(f"Revizyon", value="00", key=f"rev_{idx}")
+                
+                if chk:
+                    bulk_data.append({
+                        "file_obj": file,
+                        "orig_name": file.name,
+                        "ext": ext,
+                        "doc_no": doc_no_val,
+                        "doc_title": base_name,
+                        "doc_rev": doc_rev_val
+                    })
+            
+            submit_bulk = st.form_submit_button("🚀 SEÇİLİ DOSYALARI DEPARTMANA GÖNDER VE ONAYLAT")
+
+        if submit_bulk:
+            if not bulk_data:
+                st.warning("Lütfen işlem yapmak için en az bir dosyanın yanındaki tik kutusunu işaretleyin.")
+            else:
+                success_count = 0
+                now_str = datetime.datetime.now().strftime("%d.%m.%Y %H:%M")
+                
+                for item in bulk_data:
+                    standard_fname = generate_standard_filename(item["doc_no"], item["doc_title"], item["doc_rev"], item["ext"])
+                    saved_fname = save_uploaded_file_standard(item["file_obj"], UPLOAD_DIR, standard_fname)
+                    
+                    new_rec = {
+                        "Tarih / Saat": now_str,
+                        "Departman": selected_dept,
+                        "Doküman No": item["doc_no"].upper(),
+                        "Doküman Adı": item["doc_title"],
+                        "Revizyon No": item["doc_rev"],
+                        "Açıklama / Not": default_note,
+                        "Dosya Adı": saved_fname,
+                        "Ekleyen": st.session_state["username"],
+                        "Revizyon Mu": "Hayır"
+                    }
+                    df_docs = pd.concat([pd.DataFrame([new_rec]), df_docs], ignore_index=True)
+                    success_count += 1
+                
+                save_data(df_docs, "Departman_Dokumanlari")
+                add_notification(st.session_state["username"], selected_dept, f"Toplu Yükleme Yapıldı: {success_count} adet doküman aktarıldı.")
+                st.success(f"🎉 **{success_count}** adet dosya başarıyla **{selected_dept}** bünyesine aktarıldı!")
+                st.rerun()
+
 # --- Sadece Ömer OCAK Kullanıcısına Özel SİSTEM YÖNETİMİ & TEMİZLEME MODÜLÜ ---
-if modul == "⚙️ SİSTEM YÖNETİMİ & BAKIŞ":
+elif modul == "⚙️ SİSTEM YÖNETİMİ & BAKIŞ":
     st.title("⚙️ Sistem Yönetimi ve Toplu İşlem Paneli")
     st.warning("⚠️ Bu panel sadece **Ömer OCAK** tarafından görüntülenebilir ve yetkilendirilmiştir.")
 
@@ -328,12 +416,12 @@ else:
     
     # DOKÜMAN YÜKLEME VE REVİZYON KONTROL ALANI
     if st.session_state["can_edit"]:
-        st.subheader(f"📤 {dept_name} İçin Doküman Yükleme / Revize Etme")
+        st.subheader(f"📤 {dept_name} İçin Tekli Doküman Yükleme / Revize Etme")
         
         with st.form(f"form_{dept_name}"):
             col1, col2, col3, col4 = st.columns([1.5, 2, 1, 2])
             doc_no = col1.text_input("Doküman No / Kodu (Örn: PR-01, FR-05)").strip().upper()
-            doc_title = col2.text_input("Doküman Adı (Örn: İK Prosedürü, İzin Formu)")
+            doc_title = col2.text_input("Doküman Adı (Örn: İK Prosedürü, İizin Formu)")
             doc_rev = col3.text_input("Revizyon No", value="00").strip()
             doc_note = col4.text_input("Açıklama / Revizyon Notu (Örn: Maddeler Güncellendi)")
             uploaded_file = st.file_uploader("Dosya Seçiniz (PDF, Word, Excel vb.)", type=["pdf", "png", "jpg", "jpeg", "xlsx", "docx", "zip", "rar"])
